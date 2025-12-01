@@ -4,7 +4,7 @@ import nimscripter
 
 const errorPrefix = "Script Error: "
 
-type NimsBackend* = object
+type NimscriptBackend* = object
   addins: VMAddins
 
 proc getNimblePackagesDir(): string =
@@ -35,12 +35,11 @@ proc formatResult(exitCode: int, output: string): (string, int) =
   else:
     (output, exitCode)
 
-proc nimsBackend*(): NimsBackend =
-  #exportTo(module, help)
+proc nimscriptBackend*(): NimscriptBackend =
   let addins = implNimScriptModule(module)
-  NimsBackend(addins: addins)
+  NimscriptBackend(addins: addins)
 
-proc runCode*(self: NimsBackend, source: string): (string, int) =
+proc runCode*(self: NimscriptBackend, source: string): (string, int) =
   let tempFile = getTempDir() / "nimrepl_capture.txt"
   let oldStdout = stdout
   let outFile = open(tempFile, fmWrite)

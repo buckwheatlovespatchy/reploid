@@ -3,13 +3,14 @@
 
 import os, osproc, strformat, strutils, terminal, sequtils, times, parsecfg, sugar
 import noise
-import inimpkg/nimsBackend
+import backends/script
+import backend
 import options
 
 # Lists available builtin commands
 var commands*: seq[string] = @[]
 
-include inimpkg/commands
+include commands
 
 type App = ref object
   nim: string
@@ -23,7 +24,7 @@ type App = ref object
   editor: string
   prompt: string
   withTools: bool
-  nimsBackend: Option[NimsBackend]
+  backend: Backend
 
 var
   app: App
@@ -39,7 +40,7 @@ const
       "object", "RootObj", "enum"
   ]
   # preloaded code into user's session
-  EmbeddedCode = staticRead("inimpkg/embedded.nim")
+  EmbeddedCode = staticRead("embedded.nim")
 
 let
   ConfigDir = getConfigDir() / "inim"
@@ -77,16 +78,7 @@ let
   tmpHistory = getTempDir() / "inim_history_" & $uniquePrefix & ".nim"
 
 proc compileCode(): auto =
-  if app.nimsBackend.isSome:
-    result = app.nimsBackend.get.runCode(bufferSource)
-  else:
-    # PENDING https://github.com/nim-lang/Nim/issues/8312,
-    # remove redundant `--hint[source]=off`
-    let compileCmd = [
-        app.nim, "compile", "--run", "--verbosity=0", app.flags,
-        "--hints=off", "--path=./", "--passL:-w", bufferSource
-    ].join(" ")
-    result = execCmdEx(compileCmd)
+  result = app.backend.runCode(bufferSource)
 
 proc getPromptSymbol(): Styler
 
@@ -503,8 +495,10 @@ call(cmd) - Execute command cmd in current shell
   # Clean up
   tempIndentCode = ""
 
-proc initApp*(nim, srcFile: string, showHeader: bool, nimsBackend: bool = false, flags = "",
+proc initApp*(nim, srcFile: string, showHeader: bool,
+    backendKind: BackendKind = BackendKind.Script, flags = "",
     rcFilePath = RcFilePath, showColor = true, noAutoIndent = false) =
+
   ## Initialize the ``app` variable.
   app = App(
       nim: nim,
@@ -515,7 +509,7 @@ proc initApp*(nim, srcFile: string, showHeader: bool, nimsBackend: bool = false,
       showColor: showColor,
       noAutoIndent: noAutoIndent,
       withTools: false,
-      nimsBackend: if nimsBackend: some(NimsBackend()) else: none(NimsBackend)
+      backend: initBackend(backendKind, nim, flags)
   )
 
 
@@ -562,9 +556,11 @@ proc main(nim = "nim", srcFile = "", showHeader = true,
           flags: seq[string] = @[], createRcFile = false,
           rcFilePath: string = RcFilePath, showTypes: bool = false,
           showColor: bool = true, noAutoIndent: bool = false,
-          withTools: bool = false, useNims: bool = false) =
+          withTools: bool = false,
+          backend: BackendKind = BackendKind.Script) =
+
   ## inim interpreter
-  initApp(nim, srcFile, showHeader, useNims)
+  initApp(nim, srcFile, showHeader, backend)
 
   if flags.len > 0:
     app.flags = flags.map(f => (
@@ -638,16 +634,20 @@ proc main(nim = "nim", srcFile = "", showHeader = true,
 
 when isMainModule:
   import cligen
-  dispatch(main, short = {"flags": 'd'}, help = {
-          "nim": "Path to nim compiler",
-          "srcFile": "Nim script to preload/run",
-          "showHeader": "Show program info startup",
-          "flags": "Nim flags to pass to the compiler",
-          "createRcFile": "Force create inimrc file. Overrides current file",
-          "rcFilePath": "Change location of the inimrc file to use",
-          "showTypes": "Show var types when printing var without echo",
-          "showColor": "Color displayed text",
-          "noAutoIndent": "Disable automatic indentation",
-          "withTools": "Load handy tools",
-          "useNims": "Use nims backend"
+
+  dispatch(
+    main,
+    short = {"flags": 'd'},
+    help = {
+      "nim": "Path to nim compiler",
+      "srcFile": "Nim script to preload/run",
+      "showHeader": "Show program info startup",
+      "flags": "Nim flags to pass to the compiler",
+      "createRcFile": "Force create inimrc file. Overrides current file",
+      "rcFilePath": "Change location of the inimrc file to use",
+      "showTypes": "Show var types when printing var without echo",
+      "showColor": "Color displayed text",
+      "noAutoIndent": "Disable automatic indentation",
+      "withTools": "Load handy tools",
+      "backend": "Backend to use [script, static, dynamic]"
     })

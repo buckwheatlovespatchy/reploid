@@ -5,9 +5,13 @@ version       = "1.0.0"
 author        = "Andrei Regiani"
 description   = "Interactive Nim Shell / REPL / Playground"
 license       = "MIT"
-installDirs   = @["inimpkg"]
+installDirs   = @["src"]
 installExt    = @["nim"]
 bin           = @["inim"]
+
+# To make 'import' search the 'src' directory, use 'srcDir'
+srcDir        = "src"
+
 
 # Dependencies
 
