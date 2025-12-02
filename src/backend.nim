@@ -29,7 +29,7 @@ proc initBackend*(kind: BackendKind, nim: string, flags: string): Backend =
     Backend(kind: Dynamic, dynamicBuild: dynamicBackend(nim, flags))
 
 
-proc runCode*(backend: var Backend, source: string): (string, int) =
+proc runCode*(backend: Backend, source: string): (string, int) =
   case backend.kind
   of Script:
     result = backend.nimscript.runCode(source)

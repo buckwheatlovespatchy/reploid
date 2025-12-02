@@ -5,7 +5,7 @@ import inim
 suite "INim Test Suite":
 
   setup:
-    initApp("nim", "", true)
+    app = initApp("nim", "", true)
 
   teardown:
     discard

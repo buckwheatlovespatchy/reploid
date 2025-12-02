@@ -5,7 +5,7 @@ import inim
 suite "Nimscript Backend Tests":
 
   setup:
-    initApp("nim", "", true, nimsBackend = true)
+    initApp("nim", "", true, backendKind = BackendKind.Script)
 
   teardown:
     discard

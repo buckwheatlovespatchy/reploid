@@ -3,8 +3,8 @@
 
 import os, osproc, strformat, strutils, terminal, sequtils, times, parsecfg, sugar
 import noise
-import backends/script
 import backend
+import modes/runAndExit
 import options
 
 # Lists available builtin commands
@@ -513,45 +513,6 @@ proc initApp*(nim, srcFile: string, showHeader: bool,
   )
 
 
-proc runCodeAndExit() =
-  ## When we're reading from piped data, we just want to execute the code
-  ## and echo the output
-
-  let codeToRun = stdin.readAll().strip()
-  let codeEndsInEcho = codeToRun.split({';', '\r', '\n'})[^1].strip().startsWith("echo")
-
-  if codeEndsInEcho:
-    # If the code ends in an echo, just
-    buffer.write(codeToRun)
-  elif "import" in codeToRun:
-    # If we have imports in our code to run, we need to split them up and place them outside our block
-    let
-      importLines = codeToRun.split({';', '\r', '\n'}).filter(proc (
-        code: string): bool =
-        code.find("import") != -1 and code.strip() != ""
-      ).join(";")
-      nonImportLines = codeToRun.split({';', '\r', '\n'}).filter(proc (
-        code: string): bool =
-        code.find("import") == -1 and code.strip() != ""
-      ).join(";")
-
-    let strToWrite = """$#
-let tmpVal = block:
-  $#
-echo tmpVal
-  """ % [importLines, nonImportLines]
-    buffer.write(strToWrite)
-  else:
-    # If we have no imports, we should just run our code
-    buffer.write("""let tmpVal = block:
-  $#
-echo tmpVal
-  """ % codeToRun
-    )
-  buffer.flushFile
-  let (echo_output, _) = compileCode()
-  echo echo_output.strip()
-
 proc main(nim = "nim", srcFile = "", showHeader = true,
           flags: seq[string] = @[], createRcFile = false,
           rcFilePath: string = RcFilePath, showTypes: bool = false,
@@ -623,7 +584,7 @@ proc main(nim = "nim", srcFile = "", showHeader = true,
 
   when not defined(NOTTYCHECK):
     if not isatty(stdin):
-      runCodeAndExit()
+      runCodeAndExit(app.backend, buffer, bufferSource)
       cleanExit()
 
   while true:
