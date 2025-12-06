@@ -6,48 +6,10 @@ import noise
 import backend
 import modes/runAndExit
 import options
+import globals
+import indentation
 
-# Lists available builtin commands
-var commands*: seq[string] = @[]
-
-include commands
-
-type App = ref object
-  nim: string
-  srcFile: string
-  showHeader: bool
-  flags: string
-  rcFile: string
-  showColor: bool
-  showTypes: bool
-  noAutoIndent: bool
-  editor: string
-  prompt: string
-  withTools: bool
-  backend: Backend
-
-var
-  app: App
-  config: Config
-  indentSpaces = "  "
-
-const
-  NimblePkgVersion {.strdefine.} = ""
-  # endsWith
-  IndentTriggers = [
-      ",", "=", ":",
-      "var", "let", "const", "type", "import",
-      "object", "RootObj", "enum"
-  ]
-  # preloaded code into user's session
-  EmbeddedCode = staticRead("embedded.nim")
-
-let
-  ConfigDir = getConfigDir() / "inim"
-  RcFilePath = ConfigDir / "inim.ini"
-
-proc getOrSetSectionKeyValue(dict: var Config, section, key,
-    default: string): string =
+proc getOrSetSectionKeyValue(dict: var Config, section, key, default: string): string =
   ## Get a value or set default for that key
   ## This is for when users have older versions of the config where they may be missing keys
   result = dict.getSectionValue(section, key)
@@ -71,28 +33,10 @@ proc createRcFile(path: string): Config =
   result.setSectionKey("Features", "withTools", "False")
   result.writeConfig(path)
 
-let
-  uniquePrefix = epochTime().int
-  bufferSource = getTempDir() / "inim_" & $uniquePrefix & ".nim"
-  validCodeSource = getTempDir() / "inimvc_" & $uniquePrefix & ".nim"
-  tmpHistory = getTempDir() / "inim_history_" & $uniquePrefix & ".nim"
-
 proc compileCode(): auto =
   result = app.backend.runCode(bufferSource)
 
-proc getPromptSymbol(): Styler
-
-var
-  currentExpression = ""     # Last stdin to evaluate
-  currentOutputLine = 0      # Last line shown from buffer's stdout
-  validCode = ""             # All statements compiled succesfully
-  tempIndentCode = ""        # Later append to `validCode` if block compiles
-  indentLevel = 0            # Current
-  previouslyIndented = false # IndentLevel resets before showError()
-  sessionNoAutoIndent = false
-  buffer: File
-  noiser = Noise.init()
-  historyFile: string
+proc getPromptSymbol(indentLevel: int): Styler
 
 template outputFg(color: ForegroundColor, bright: bool = false,
     body: untyped): untyped =
@@ -158,8 +102,8 @@ proc getFileData(path: string): string =
 proc compilationSuccess(current_statement, output: string, commit = true) =
   ## Add our line to valid code
   ## If we don't commit, roll back validCode if we've entered an echo
-  if len(tempIndentCode) > 0:
-    validCode &= tempIndentCode
+  if len(indenter.indentedCode) > 0:
+    validCode &= indenter.indentedCode
   else:
     validCode &= current_statement & "\n"
 
@@ -231,7 +175,7 @@ proc showError(output: string, reraised: bool = false) =
   let
     hasCurrentExpression = currentExpression != ""
     noImportStatement = importStatement == false
-    notPreviousIndented = previouslyIndented == false
+    notPreviousIndented = not indenter.wasIndented
     isHasToBe = message.contains("and has to be")
     isDiscardShortcut = hasCurrentExpression and noImportStatement and notPreviousIndented and isHasToBe
 
@@ -292,16 +236,10 @@ proc showError(output: string, reraised: bool = false) =
               output.strip() # Full message
           else:
               message # Shortened message
-    previouslyIndented = false
+    indenter.wasIndented = false
 
-proc getPromptSymbol(): Styler =
-  var prompt = ""
-  if indentLevel == 0:
-    prompt = app.prompt
-    previouslyIndented = false
-  else:
-    prompt = ".... "
-  # Auto-indent (multi-level)
+proc getPromptSymbol(indentLevel: int): Styler =
+  let prompt = if indentLevel == 0: app.prompt else: ".... "
   result = Styler.init(prompt)
 
 proc init(preload = "") =
@@ -336,26 +274,29 @@ proc hasIndentTrigger*(line: string): bool =
       result = true
 
 proc doRepl() =
-  # Read line
-  if indentLevel > 0:
-    noiser.preloadBuffer(indentSpaces.repeat(indentLevel))
+  ## read input
+  noiser.preloadBuffer(indenter.getIndentation, collapseWhitespaces = false)
+
   var ok = false
+
   try:
     ok = noiser.readLine()
   except EOFError:
     # Handle EOF when stdin is closed (e.g., when piping input)
     cleanExit()
     return
+
   if not ok:
     case noiser.getKeyType():
     of ktCtrlC:
       bufferRestoreValidCode()
-      indentLevel = 0
-      tempIndentCode = ""
+      indenter.reset()
       return
+
     of ktCtrlD:
       echo "\nQuitting INim: Goodbye!"
       cleanExit()
+
     of ktCtrlX:
       if app.editor != "":
         var vc = open(validCodeSource, fmWrite)
@@ -373,12 +314,13 @@ proc doRepl() =
       else:
         echo "No $EDITOR set in ENV"
       return
+
     else:
       return
 
   currentExpression = noiser.getLine
 
-  # Special commands
+  ## process special commands
   if currentExpression in ["exit", "exit()", "quit", "quit()"]:
     cleanExit()
   elif currentExpression in ["help", "help()"]:
@@ -404,40 +346,23 @@ call(cmd) - Execute command cmd in current shell
     else:
       discard
 
-  # Empty line: exit indent level, otherwise do nothing
-  if currentExpression.strip() == "" or currentExpression.startsWith("else"):
-    if indentLevel > 0:
-      indentLevel -= 1
-    elif indentLevel == 0:
-      return
+  ## process line
+  let indentResult = indenter.process(currentExpression)
 
-  # Write your line to buffer(temp) source code
-  buffer.writeLine(indentSpaces.repeat(indentLevel) & currentExpression)
-  buffer.flushFile()
-
-  # Check for indent and trigger it
-  if currentExpression.hasIndentTrigger():
-    # Already indented once skipping
-    if not sessionNoAutoIndent or not previouslyIndented:
-      indentLevel += 1
-      previouslyIndented = true
-
-  # Don't run yet if still on indent
-  if indentLevel != 0:
-    # Skip indent for first line
-    tempIndentCode &= currentExpression & "\n"
-    when promptHistory:
-      # Add in indents to our history
-      if tempIndentCode.len > 0:
-        noiser.historyAdd(currentExpression)
+  if indentResult.emptyExpression and indentResult.atRootLevel:
     return
 
-  # Compile buffer
-  let (output, status) = compileCode()
+  buffer.writeLine(currentExpression)
+  buffer.flushFile()
 
-  when promptHistory:
-    if currentExpression.strip().len > 0:
-      noiser.historyAdd(currentExpression)
+  if not indentResult.emptyExpression:
+    when promptHistory: noiser.historyAdd(currentExpression)
+
+  if not indentResult.atRootLevel:
+    return
+
+  ## compile code
+  let (output, status) = compileCode()
 
   # Succesful compilation, expression is valid
   if status == 0:
@@ -447,7 +372,7 @@ call(cmd) - Execute command cmd in current shell
       bufferRestoreValidCode()
   # Maybe trying to echo value?
   elif "has to be used" in output or "has to be discarded" in output and
-      indentLevel == 0: #
+      indenter.indentLevel == 0: #
     bufferRestoreValidCode()
 
     # Save the current expression as an echo
@@ -459,9 +384,9 @@ call(cmd) - Execute command cmd in current shell
     buffer.flushFile()
 
     # Don't run yet if still on indent
-    if indentLevel != 0:
+    if indenter.indentLevel != 0:
       # Skip indent for first line
-      tempIndentCode &= currentExpression & "\n"
+      indenter.indentedCode &= currentExpression & "\n"
       when promptHistory:
         # Add in indents to our history
         if currentExpression.len > 0:
@@ -474,7 +399,7 @@ call(cmd) - Execute command cmd in current shell
       compilationSuccess(currentExpression, echo_output)
     else:
       # Show any errors in echoing the statement
-      indentLevel = 0
+      indenter.indentLevel = 0
       if app.showTypes:
         # If we show types and this has errored again,
         # reraise the original error message
@@ -489,15 +414,15 @@ call(cmd) - Execute command cmd in current shell
   else:
     # Write back valid code to buffer
     bufferRestoreValidCode()
-    indentLevel = 0
+    indenter.indentLevel = 0
     showError(output)
 
   # Clean up
-  tempIndentCode = ""
+  indenter.indentedCode = ""
 
 proc initApp*(nim, srcFile: string, showHeader: bool,
     backendKind: BackendKind = BackendKind.Script, flags = "",
-    rcFilePath = RcFilePath, showColor = true, noAutoIndent = false) =
+    rcFilePath = RcFilePath, showColor = true) =
 
   ## Initialize the ``app` variable.
   app = App(
@@ -507,7 +432,6 @@ proc initApp*(nim, srcFile: string, showHeader: bool,
       flags: flags,
       rcFile: rcFilePath,
       showColor: showColor,
-      noAutoIndent: noAutoIndent,
       withTools: false,
       backend: initBackend(backendKind, nim, flags)
   )
@@ -520,7 +444,7 @@ proc main(nim = "nim", srcFile = "", showHeader = true,
           withTools: bool = false,
           backend: BackendKind = BackendKind.Script) =
 
-  ## inim interpreter
+  indenter = createIndenter(not noAutoIndent)
   initApp(nim, srcFile, showHeader, backend)
 
   if flags.len > 0:
@@ -566,12 +490,6 @@ proc main(nim = "nim", srcFile = "", showHeader = true,
       "Style", "showColor", "True") == "False":
     app.showColor = false
 
-  if noAutoIndent:
-    # Still trigger indents but do not actually output any spaces,
-    # useful when sending text to a terminal
-    indentSpaces = ""
-    sessionNoAutoIndent = noAutoIndent
-
   app.editor = getEnv("EDITOR")
 
   if srcFile.len > 0:
@@ -588,7 +506,8 @@ proc main(nim = "nim", srcFile = "", showHeader = true,
       cleanExit()
 
   while true:
-    let prompt = getPromptSymbol()
+    let indentLevel = indenter.prepare()
+    let prompt = getPromptSymbol(indentLevel)
     noiser.setPrompt(prompt)
 
     doRepl()
