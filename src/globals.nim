@@ -53,7 +53,7 @@ var
 # Indentation
 
 const IndentTriggers* = [
-      ",", "=", ":",
-      "var", "let", "const", "type", "import",
-      "object", "RootObj", "enum"
-  ]
+  ",", "=", ":",
+  "var", "let", "const", "type", "import",
+  "object", "RootObj", "enum"
+]

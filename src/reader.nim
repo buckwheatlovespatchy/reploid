@@ -4,6 +4,7 @@
 import noise
 import strutils
 
+
 type Reader* = object
   noise: Noise
   prompt: string
@@ -118,22 +119,3 @@ proc read*(self: var Reader): ReadResult =
     complete = indentation == 0
 
   result = ReadResult(kind: Lines, lines: lines.join("\n"))
-
-
-if isMainModule:
-  var reader = newReader("reploid> ")
-
-  while true:
-    let result = reader.read()
-    case result.kind:
-    of Lines:
-      if result.lines != "":
-        echo result.lines
-    of Reset:
-      discard
-    of Quit:
-      break
-    of Editor:
-      discard
-    of EOF:
-      break
