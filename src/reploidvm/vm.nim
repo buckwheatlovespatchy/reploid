@@ -13,24 +13,8 @@ import temple
 const nimExt = ".nim"
 const libExt = ".lib"
 const templateExt = ".nim.template"
-
-const tempPath = "tmp"
 const templatesPath = "templates"
 
-const importsPath = tempPath/"imports"
-const importsSourcePath = importsPath & nimExt
-const importsLibraryPath = importsPath & libExt
-
-const declarationsPath = tempPath/"declarations"
-const declarationsSourcePath = declarationsPath & nimExt
-const declarationsLibraryPath = declarationsPath & libExt
-
-const statePath = tempPath/"state"
-const stateSourcePath = statePath & nimExt
-
-const commandPath = tempPath/"command"
-const commandSourcePath = commandPath & nimExt
-const commandLibraryPath = commandPath & libExt
 
 const declarationsTemplate =      staticRead(templatesPath/"declarations" & templateExt)
 const stateTemplate =             staticRead(templatesPath/"state" & templateExt)
@@ -50,6 +34,7 @@ type VariableDeclaration* = object
   declarer*: string
   name*: string
   typ*: string
+  rest*: string
 
 
 type ReploidVM* = object
@@ -72,6 +57,11 @@ type ReploidVM* = object
   newDeclarations: seq[string]
   states: seq[LibHandle]
 
+  importsPath: string
+  declarationsPath: string
+  statePath: string
+  commandPath: string
+
 
 proc cased(value: string): string =
   result = value
@@ -79,7 +69,7 @@ proc cased(value: string): string =
 
 
 proc declaration(self: VariableDeclaration): string =
-  self.declarer & " " & self.name & "* : " & self.typ
+  self.declarer & " " & self.name & "* : " & self.typ & self.rest
 
 
 proc accessors(self: ReploidVM, variable: VariableDeclaration): string =
@@ -177,9 +167,10 @@ proc generateCommandSource*(self: ReploidVM, command: string): string =
   )
 
 
-proc newReploidVM*(compiler: Compiler): ReploidVM =
-  ReploidVM(
+proc newReploidVM*(compiler: Compiler, tempPath: string = getTempDir()): ReploidVM =
+  result = ReploidVM(
     compiler: compiler,
+
     declarationsTemplate: declarationsTemplate,
     stateTemplate: stateTemplate,
     commandTemplate: commandTemplate,
@@ -188,7 +179,12 @@ proc newReploidVM*(compiler: Compiler): ReploidVM =
     setAccessorSymbolTemplate: setAccessorSymbolTemplate,
     stateUpdaterTemplate: stateUpdaterTemplate,
     loadStateTemplate: loadStateTemplate,
-    saveStateTemplate: saveStateTemplate
+    saveStateTemplate: saveStateTemplate,
+
+    importsPath: tempPath / "imports",
+    declarationsPath: tempPath / "declarations",
+    statePath: tempPath / "state",
+    commandPath: tempPath / "command"
   )
 
 
@@ -200,8 +196,8 @@ proc declareImport*(self: var ReploidVM, declaration: string) =
   self.newImports.add(declaration)
 
 
-proc declareVar*(self: var ReploidVM, declarer: string, name: string, typ: string) =
-  let declaration = VariableDeclaration(declarer: declarer, name: name, typ: typ)
+proc declareVar*(self: var ReploidVM, declarer: string, name: string, typ: string, rest: string) =
+  let declaration = VariableDeclaration(declarer: declarer, name: name, typ: typ, rest: rest)
   self.newVariables.add(declaration)
 
 
@@ -212,9 +208,11 @@ proc declare*(self: var ReploidVM, declaration: string) =
 proc updateImports*(self: var ReploidVM): (string, int) =
   let imports = self.imports & self.newImports
   let source = imports.join("\n")
+  let srcPath = self.importsPath & nimExt
+  let libPath = self.importsPath & libExt
 
-  importsSourcePath.writeFile(source)
-  result = self.compiler.compileLibrary(importsSourcePath, importsLibraryPath)
+  srcPath.writeFile(source)
+  result = self.compiler.compileLibrary(srcPath, libPath)
 
   if result.isSuccess:
     self.imports.add(self.newImports)
@@ -222,20 +220,41 @@ proc updateImports*(self: var ReploidVM): (string, int) =
   self.newImports = @[]
 
 
+proc updateDeclarations*(self: var ReploidVM): (string, int) =
+  let declarations = self.declarations & self.newDeclarations
+  let source = declarations.join("\n")
+  let srcPath = self.declarationsPath & nimExt
+  let libPath = self.declarationsPath & libExt
+
+  srcPath.writeFile(source)
+  result = self.compiler.compileLibrary(srcPath, libPath)
+
+  if result.isSuccess:
+    self.declarations.add(self.newDeclarations)
+
+  self.newDeclarations = @[]
+
+
 proc updateState*(self: var ReploidVM): (string, int) =
+  let declarationsResult = self.updateDeclarations()
+
+  if not declarationsResult.isSuccess:
+    return declarationsResult
+
   let newVariables = self.variables & self.newVariables
   let source = self.generateStateSource(newVariables)
-  let stateLibraryPath = statePath & $self.states.len & libExt
+  let srcPath = self.statePath & nimExt
+  let libPath = self.statePath & $self.states.len & libExt
 
-  stateSourcePath.writeFile(source)
+  srcPath.writeFile(source)
 
-  result = self.compiler.compileLibrary(stateSourcePath, stateLibraryPath)
+  result = self.compiler.compileLibrary(srcPath, libPath)
 
   if not result.isSuccess:
     self.newVariables = @[]
     return result
 
-  let newState = loadLib(stateLibraryPath)
+  let newState = loadLib(libPath)
   let initialize = cast[Initialize](newState.symAddr("initialize"))
 
   if self.states.len > 0:
@@ -246,32 +265,23 @@ proc updateState*(self: var ReploidVM): (string, int) =
   self.newVariables = @[]
 
 
-proc updateDeclarations*(self: var ReploidVM): (string, int) =
-  let declarations = self.declarations & self.newDeclarations
-  let source = declarations.join("\n")
-
-  declarationsSourcePath.writeFile(source)
-  result = self.compiler.compileLibrary(declarationsSourcePath, declarationsLibraryPath)
-
-  if result.isSuccess:
-    self.declarations.add(self.newDeclarations)
-
-  self.newDeclarations = @[]
-
-
 proc runCommand*(self: var ReploidVM, command: string): (string, int) =
-  let declarationsSource = self.generateDeclarationsSource()
-  declarationsSourcePath.writeFile(declarationsSource)
+  let declarationsResult = self.updateDeclarations()
 
-  let commandSource = self.generateCommandSource(command)
-  commandSourcePath.writeFile(commandSource)
+  if not declarationsResult.isSuccess:
+    return declarationsResult
 
-  result = self.compiler.compileLibrary(commandSourcePath, commandLibraryPath)
+  let srcPath = self.commandPath & nimExt
+  let source = self.generateCommandSource(command)
+  srcPath.writeFile(source)
+
+  let libPath = self.commandPath & libExt
+  result = self.compiler.compileLibrary(srcPath, libPath)
 
   if not result.isSuccess:
     return result
 
-  let commandLib = loadLib(commandLibraryPath)
+  let commandLib = loadLib(libPath)
   let run = cast[Run](commandLib.symAddr("run"))
   run(self.states[^1])
   unloadLib(commandLib)
