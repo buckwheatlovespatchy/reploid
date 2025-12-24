@@ -16,7 +16,6 @@ const templateExt = ".nim.template"
 const templatesPath = "templates"
 
 
-const declarationsTemplate =      staticRead(templatesPath/"declarations" & templateExt)
 const stateTemplate =             staticRead(templatesPath/"state" & templateExt)
 const commandTemplate =           staticRead(templatesPath/"command" & templateExt)
 const accessorsTemplate =         staticRead(templatesPath/"accessors" & templateExt)
@@ -38,7 +37,6 @@ type VariableDeclaration* = object
 
 
 type ReploidVM* = object
-  declarationsTemplate: string
   stateTemplate: string
   commandTemplate: string
   accessorsTemplate: string
@@ -128,17 +126,7 @@ proc saveState(self: ReploidVM, variable: VariableDeclaration): string =
   )
 
 
-proc generateDeclarationsSource*(self: ReploidVM): string =
-  let imports = self.imports.join("\n")
-  let declarations = self.declarations.join("\n")
-
-  return self.declarationsTemplate.replace(
-    ("imports", imports),
-    ("declarations", declarations)
-  )
-
-
-proc generateStateSource*(self: ReploidVM, variables: seq[VariableDeclaration]): string =
+proc generateStateSource(self: ReploidVM, variables: seq[VariableDeclaration]): string =
   let variableDeclarations = variables.mapIt(declaration(it)).join("\n")
   let accessorsDeclarations = variables.mapIt(self.accessors(it)).join("\n")
   let loadOldGetAccessors = self.variables.mapIt(self.loadOldGetAccessor(it)).join("\n")
@@ -152,7 +140,7 @@ proc generateStateSource*(self: ReploidVM, variables: seq[VariableDeclaration]):
   )
 
 
-proc generateCommandSource*(self: ReploidVM, command: string): string =
+proc generateCommandSource(self: ReploidVM, command: string): string =
   let loadGetAccessors = self.variables.mapIt(self.loadGetAccessor(it)).join("\n")
   let loadSetAccessors = self.variables.mapIt(self.loadSetAccessor(it)).join("\n")
   let loadState = self.variables.mapIt(self.loadState(it)).join("\n")
@@ -171,7 +159,6 @@ proc newReploidVM*(compiler: Compiler, tempPath: string = getTempDir()): Reploid
   result = ReploidVM(
     compiler: compiler,
 
-    declarationsTemplate: declarationsTemplate,
     stateTemplate: stateTemplate,
     commandTemplate: commandTemplate,
     accessorsTemplate: accessorsTemplate,
@@ -186,6 +173,8 @@ proc newReploidVM*(compiler: Compiler, tempPath: string = getTempDir()): Reploid
     statePath: tempPath / "state",
     commandPath: tempPath / "command"
   )
+  (result.importsPath & nimExt).writeFile("")
+  (result.declarationsPath & nimExt).writeFile("")
 
 
 proc isSuccess*(toCheck: (string, int)): bool =
@@ -236,11 +225,6 @@ proc updateDeclarations*(self: var ReploidVM): (string, int) =
 
 
 proc updateState*(self: var ReploidVM): (string, int) =
-  let declarationsResult = self.updateDeclarations()
-
-  if not declarationsResult.isSuccess:
-    return declarationsResult
-
   let newVariables = self.variables & self.newVariables
   let source = self.generateStateSource(newVariables)
   let srcPath = self.statePath & nimExt
@@ -266,11 +250,6 @@ proc updateState*(self: var ReploidVM): (string, int) =
 
 
 proc runCommand*(self: var ReploidVM, command: string): (string, int) =
-  let declarationsResult = self.updateDeclarations()
-
-  if not declarationsResult.isSuccess:
-    return declarationsResult
-
   let srcPath = self.commandPath & nimExt
   let source = self.generateCommandSource(command)
   srcPath.writeFile(source)

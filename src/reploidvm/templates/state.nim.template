@@ -1,5 +1,6 @@
 import dynlib
-import declarations
+include imports
+include declarations
 
 # Variable declarations
 {variableDeclarations}

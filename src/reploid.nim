@@ -24,20 +24,28 @@ type Configuration = object
   history {.help: "History file to use".}               : string
   colors  {.help: "Display colors".}                    : bool
 
-
 # DONE: manage dynamic libraries
 # DONE: cleanup on exit
 # DONE: integrate command line args using cliquet
 # DONE: integrate rc configuration file
-# TODO: add declarations for procs and types
-# TODO: integrate commands
+# DONE: add declarations for procs and types
+# DONE: declare let, var, const
+# DONE: support type declarations
+# DONE: parametrize tmp paths
+# DONE: import templates in compile time
 # TODO: integrate ReploidVM
+# TODO: integrate commands
 # TODO: error handling
-# TODO: declare let
-# TODO: support type declarations
-# TODO: parametrize tmp and template paths
+# TODO: integrate tcc
 # TODO: rewrite tests
 # TODO: write docs
+# TODO: options:
+# TODO:   "prelude": "Nim scripts to preload"
+# TODO:   "showTypes": "Show var types when printing var without echo"
+# TODO:   "noAutoIndent": "Disable automatic indentation"
+# TODO:   "withTools": "Load handy tools"
+# TODO:   "backend": "Backend to use [script, static, dynamic]"
+
 proc reploid(configuration: Configuration) =
   let output = newOutput(colors = configuration.colors)
   let compiler = newNimCompiler(configuration.nim, configuration.flags)
@@ -101,11 +109,6 @@ proc helpAndQuit(cli: var Cliquet[Configuration]) =
 
 
 when isMainModule:
-  #"prelude": "Nim scripts to preload",
-  #"showTypes": "Show var types when printing var without echo",
-  #"noAutoIndent": "Disable automatic indentation",
-  #"withTools": "Load handy tools",
-  #"backend": "Backend to use [script, static, dynamic]"
   let reploidDir = getHomeDir()/".reploid"
   let configFile = reploidDir/"config"
   let historyFile = reploidDir/"history"

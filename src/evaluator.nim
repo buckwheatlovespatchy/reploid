@@ -5,10 +5,15 @@ import input
 import evaluation
 import reploidvm/vm
 import parser
+import strutils
 
 
 type Evaluator* = object
   vm: ReploidVM
+
+
+proc isEmpty(lines: string): bool =
+  lines.strip().len == 0
 
 
 proc isImport(lines: string): Parser =
@@ -35,12 +40,13 @@ proc isDeclaration(lines: string): Parser =
 
 
 proc evaluateLines(self: var Evaluator, lines: string): Evaluation =
+  if lines.isEmpty():
+    return Evaluation(kind: Empty)
+
   let importResult = lines.isImport()
   if importResult.ok:
-    echo "Declaring import"
     self.vm.declareImport(lines)
     let updateImportsResult = self.vm.updateImports()
-    echo "Result: ", updateImportsResult.isSuccess
 
     return Evaluation(
       kind: if updateImportsResult.isSuccess: Success else: Error,
@@ -56,7 +62,6 @@ proc evaluateLines(self: var Evaluator, lines: string): Evaluation =
 
     self.vm.declareVar(declarer, label, typ, rest)
     let updateStateResult = self.vm.updateState()
-    echo "Result: ", updateStateResult.isSuccess
 
     return Evaluation(
       kind: if updateStateResult.isSuccess: Success else: Error,
@@ -65,10 +70,8 @@ proc evaluateLines(self: var Evaluator, lines: string): Evaluation =
 
   let declResult = lines.isDeclaration()
   if declResult.ok:
-    echo "Declaring non-variable"
     self.vm.declare(lines)
     let updateDeclarationsResult = self.vm.updateDeclarations()
-    echo "Result: ", updateDeclarationsResult.isSuccess
 
     return Evaluation(
       kind: if updateDeclarationsResult.isSuccess: Success else: Error,
@@ -76,7 +79,7 @@ proc evaluateLines(self: var Evaluator, lines: string): Evaluation =
     )
 
   # command
-  return Evaluation(kind: Success, result: "")
+  return Evaluation(kind: Success)
 
 
 proc newEvaluator*(vm: ReploidVM): Evaluator =

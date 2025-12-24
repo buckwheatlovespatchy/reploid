@@ -67,7 +67,8 @@ proc write*(self: Output, message: string, color: ColorScheme = colorScheme(), n
   if bg.isSome:
     stdout.setBackgroundColor(bg.get[0], bg.get[1])
 
-  stdout.write(message & (if newline: "\n" else: ""))
+  let trail = if message.len == 0 or message[^1] == '\n' or not newline: "" else: "\n"
+  stdout.write(message & trail)
   stdout.resetAttributes()
   stdout.flushFile()
 

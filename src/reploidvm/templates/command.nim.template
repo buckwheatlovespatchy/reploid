@@ -1,4 +1,5 @@
 import dynlib
+include imports
 include declarations
 
 proc run*(stateLib: LibHandle) {.exportc, dynlib.} =
