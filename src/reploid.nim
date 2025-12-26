@@ -51,8 +51,6 @@ type Configuration = object
 # TODO:   "prelude": "Nim scripts to preload"
 # TODO:   "showTypes": "Show var types when printing var without echo"
 # TODO:   "noAutoIndent": "Disable automatic indentation"
-# TODO:   "withTools": "Load handy tools"
-# TODO:   "backend": "Backend to use [script, static, dynamic]"
 
 proc defaultConfig*(): Configuration =
   let reploidDir = getHomeDir()/".reploid"

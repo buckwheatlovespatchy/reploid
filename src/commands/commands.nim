@@ -29,7 +29,7 @@ proc command*(name: string, help: string, run: CommandProc): Command =
 
 
 proc buildHelpLine(name: string, help: string, maxWidth: int): string =
-  "  " & name & ":" & " ".repeat(maxWidth - name.len) & "  " & help & "\n"
+  "  " & name & ":" & " ".repeat(maxWidth - name.len) & "  " & help
 
 
 proc buildHelpCommand(commands: seq[Command]): Command =
@@ -39,7 +39,7 @@ proc buildHelpCommand(commands: seq[Command]): Command =
 
   let helpText = "Commands:\n" & commands
     .mapIt(buildHelpLine(it.name, it.help, maxWidth))
-    .join("\n") &
+    .join("\n") & "\n" &
     buildHelpLine(result.name, "show this help message", maxWidth)
 
   result.help = "shows this help message"
