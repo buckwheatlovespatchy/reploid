@@ -19,8 +19,17 @@ proc match(line: string, patterns: varargs[string]): (bool, string) =
   return (false, line)
 
 
-proc startsAsLabel(text: string): bool =
-  text.len > 0 and text[0].isAlphaNumeric or text[0] == '_'
+proc startsAsLabelOrNumber(text: string): bool =
+  let alphaNumeric = text[0].isAlphaNumeric
+  let underscore = text[0] == '_'
+  text.len > 0 and (alphaNumeric or underscore)
+
+
+proc startsAsSymbol(text: string): bool =
+  let notAlphaNumeric = not text[0].isAlphaNumeric
+  let notUnderscore = text[0] != '_'
+  text.len > 0 and notAlphaNumeric and notUnderscore
+
 
 proc parse*(text: string): Parser =
   Parser(ok: true, text: text, tokens: @[], expected: "")
@@ -35,7 +44,25 @@ proc matchKeywords*(self: Parser, texts: varargs[string]): Parser =
   for text in texts:
     let (matched, rest) = self.text.match(text)
 
-    if matched and not rest.startsAsLabel:
+    if matched and not rest.startsAsLabelOrNumber:
+      result.text = rest
+      result.tokens.add(text)
+      return
+
+  result.ok = false
+  result.expected = texts.join(", ")
+
+
+proc matchSymbols*(self: Parser, texts: varargs[string]): Parser =
+  if not self.ok:
+    return self
+
+  result = self
+
+  for text in texts:
+    let (matched, rest) = self.text.match(text)
+
+    if matched and not rest.startsAsSymbol:
       result.text = rest
       result.tokens.add(text)
       return
@@ -56,7 +83,7 @@ proc matchLabel*(self: Parser): Parser =
   result = self
   var token = ""
 
-  while result.text.len > 0 and result.text.startsAsLabel:
+  while result.text.len > 0 and result.text.startsAsLabelOrNumber:
     token &= result.text[0]
     result.text = result.text[1..^1]
 

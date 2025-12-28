@@ -44,7 +44,7 @@ proc isVariableDeclaration(lines: string): Parser =
     .consumeSpaces()
     .matchLabel()
     .consumeSpaces()
-    .matchKeywords(":")
+    .matchSymbols(":")
     .consumeSpaces()
     .matchUpTo("=")
 
