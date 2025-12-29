@@ -3,7 +3,6 @@
 
 import strutils
 import tables
-
 import input
 import evaluation
 import parser
@@ -46,7 +45,13 @@ proc isVariableDeclaration(lines: string): Parser =
     .consumeSpaces()
     .matchSymbols(":")
     .consumeSpaces()
-    .matchUpTo("=")
+    .matchLabel()
+
+
+proc isInitializer(afterVar: Parser): Parser =
+  afterVar
+    .consumeSpaces()
+    .matchSymbols("=")
 
 
 proc isDeclaration(lines: string): Parser =
@@ -55,55 +60,94 @@ proc isDeclaration(lines: string): Parser =
     .consumeSpaces()
 
 
-proc evaluateLines(self: var Evaluator, lines: string): Evaluation =
-  if lines.isEmpty():
-    return Evaluation(kind: Empty)
-
+proc processCommand(self: var Evaluator, lines: string, evaluation: var Evaluation): bool =
   let (isCommand, command, args) = self.getCommand(lines)
-  if isCommand:
-    return command.run(self.commandsApi, args)
 
+  if not isCommand:
+    return false
+
+  evaluation = command.run(self.commandsApi, args)
+  return true
+
+
+proc processImport(self: var Evaluator, lines: string, evaluation: var Evaluation): bool =
   let importResult = lines.isImport()
-  if importResult.ok:
-    self.vm.declareImport(lines)
-    let updateImportsResult = self.vm.updateImports()
+  if not importResult.ok:
+    return false
 
-    return Evaluation(
-      kind: if updateImportsResult.isSuccess: Success else: Error,
-      result: updateImportsResult[0]
-    )
+  self.vm.declareImport(importResult.text)
+  let updateImportsResult = self.vm.updateImports()
 
+  evaluation = Evaluation(
+    kind: if updateImportsResult.isSuccess: Success else: Error,
+    result: updateImportsResult[0]
+  )
+  return true
+
+
+proc processVariableDeclaration(self: var Evaluator, lines: string, evaluation: var Evaluation): bool =
   let varDeclResult = lines.isVariableDeclaration()
-  if varDeclResult.ok:
-    let declarer = varDeclResult.tokens[0]
-    let label = varDeclResult.tokens[1]
-    let typ = varDeclResult.tokens[3].strip()
-    let rest = varDeclResult.text
+  if not varDeclResult.ok:
+    return false
 
-    self.vm.declareVar(declarer, label, typ, rest)
-    let updateStateResult = self.vm.updateState()
+  let declarer = varDeclResult.tokens[0]
+  let label = varDeclResult.tokens[1]
+  let typ = varDeclResult.tokens[3].strip()
 
-    return Evaluation(
-      kind: if updateStateResult.isSuccess: Success else: Error,
-      result: updateStateResult[0]
-    )
+  let initializerResult = varDeclResult.isInitializer()
+  if initializerResult.ok:
+    self.vm.declareVar(declarer, label, typ, initializerResult.text)
+  else:
+    self.vm.declareVar(declarer, label, typ)
 
+  let updateStateResult = self.vm.updateState()
+
+  evaluation = Evaluation(
+    kind: if updateStateResult.isSuccess: Success else: Error,
+    result: updateStateResult[0]
+  )
+  return true
+
+
+proc processOtherDeclaration(self: var Evaluator, lines: string, evaluation: var Evaluation): bool =
   let declResult = lines.isDeclaration()
-  if declResult.ok:
-    self.vm.declare(lines)
-    let updateDeclarationsResult = self.vm.updateDeclarations()
+  if not declResult.ok:
+    return false
 
-    return Evaluation(
-      kind: if updateDeclarationsResult.isSuccess: Success else: Error,
-      result: updateDeclarationsResult[0]
-    )
+  self.vm.declare(lines)
+  let updateDeclarationsResult = self.vm.updateDeclarations()
 
+  evaluation = Evaluation(
+    kind: if updateDeclarationsResult.isSuccess: Success else: Error,
+    result: updateDeclarationsResult[0]
+  )
+  return true
+
+
+proc processRunCommand(self: var Evaluator, lines: string): Evaluation =
   let runResult = self.vm.runCommand(lines)
-
   return Evaluation(
     kind: if runResult.isSuccess: Success else: Error,
     result: runResult[0]
   )
+
+
+proc evaluateLines(self: var Evaluator, lines: string): Evaluation =
+  if lines.isEmpty():
+    return Evaluation(kind: Empty)
+
+  var evaluation = Evaluation(kind: Empty)
+
+  if self.processCommand(lines, evaluation):
+    return evaluation
+  elif self.processImport(lines, evaluation):
+    return evaluation
+  elif self.processVariableDeclaration(lines, evaluation):
+    return evaluation
+  elif self.processOtherDeclaration(lines, evaluation):
+    return evaluation
+  else:
+    return self.processRunCommand(lines)
 
 
 proc newEvaluator*(

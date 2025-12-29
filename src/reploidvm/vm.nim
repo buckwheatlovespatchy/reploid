@@ -37,7 +37,7 @@ type VariableDeclaration* = object
   declarer*: string
   name*: string
   typ*: string
-  rest*: string
+  initializer*: string
 
 
 var stateId: int = 0
@@ -74,7 +74,8 @@ proc cased(value: string): string =
 
 
 proc declaration(self: VariableDeclaration): string =
-  self.declarer & " " & self.name & "* : " & self.typ & self.rest
+  var initializer = if self.initializer.len > 0: " = " & self.initializer else: ""
+  self.declarer & " " & self.name & "* : " & self.typ & initializer
 
 
 proc accessors(self: ReploidVM, variable: VariableDeclaration): string =
@@ -190,11 +191,11 @@ proc isSuccess*(toCheck: (string, int)): bool =
 
 
 proc declareImport*(self: var ReploidVM, declaration: string) =
-  self.newImports.add(declaration)
+  self.newImports.add("import " & declaration)
 
 
-proc declareVar*(self: var ReploidVM, declarer: string, name: string, typ: string, rest: string) =
-  let declaration = VariableDeclaration(declarer: declarer, name: name, typ: typ, rest: rest)
+proc declareVar*(self: var ReploidVM, declarer: string, name: string, typ: string, initializer: string = "") =
+  let declaration = VariableDeclaration(declarer: declarer, name: name, typ: typ, initializer: initializer)
   self.newVariables.add(declaration)
 
 

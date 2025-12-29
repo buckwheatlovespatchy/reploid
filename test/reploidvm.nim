@@ -34,7 +34,7 @@ suite "Reploid VM should:":
 
 
   test "declare a variable":
-    vm.declareVar("var", "x", "int", " = 20")
+    vm.declareVar("var", "x", "int", "20")
 
     result = vm.updateState()
     check result == ("", 0)
@@ -44,7 +44,7 @@ suite "Reploid VM should:":
 
 
   test "update the value of a variable":
-    vm.declareVar("var", "x", "int", " = 20")
+    vm.declareVar("var", "x", "int", "20")
 
     result = vm.updateState()
     check result == ("", 0)
@@ -58,7 +58,7 @@ suite "Reploid VM should:":
 
   test "update many times the value of a variable":
     let start = 20
-    vm.declareVar("var", "x", "int", " = " & $start)
+    vm.declareVar("var", "x", "int", $start)
 
     result = vm.updateState()
     check result == ("", 0)
@@ -73,7 +73,7 @@ suite "Reploid VM should:":
 
   test "initialize a string variable":
     let value = "Protobot."
-    vm.declareVar("var", "x", "string", " = \"" & value & "\"")
+    vm.declareVar("var", "x", "string", "\"" & value & "\"")
 
     result = vm.updateState()
     check result == ("", 0)
@@ -83,8 +83,7 @@ suite "Reploid VM should:":
 
 
   test "import a library":
-    # TODO: the argument should not have to include the "import" keyword
-    vm.declareImport("import strutils")
+    vm.declareImport("strutils")
 
     result = vm.updateImports()
     check result[1] == 0
@@ -94,7 +93,7 @@ suite "Reploid VM should:":
 
 
   test "import a local source file":
-    vm.declareImport("import test/localcode")
+    vm.declareImport("test/localcode")
     result = vm.updateImports()
     check result[1] == 0
 
